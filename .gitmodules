@@ -1,0 +1,3 @@
+[submodule "third_party/WinUHid"]
+	path = third_party/WinUHid
+	url = https://github.com/cgutman/WinUHid.git

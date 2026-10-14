@@ -8,7 +8,8 @@ HID-Mouse 是面向 Windows 11 的虚拟 HID 鼠标兼容层，用来解决一�
 的事件会被替换为一只 WinUHid 虚拟鼠标发出的移动、按键或滚轮报告。最终由
 Windows 自己决定事件交给哪个窗口，HID-Mouse 不识别或适配具体应用。
 
-> 当前状态：设计方案待确认，功能尚未实现。
+> 当前状态：被动输入探针和单动作 WinUHid 重放已经实现；持续识别、吞掉并转发
+> 输入仍在验证阶段。
 
 ## 适用场景
 
@@ -25,7 +26,21 @@ Windows 自己决定事件交给哪个窗口，HID-Mouse 不识别或适配具�
 - **避免回环**：虚拟鼠标产生的输入不会再次进入转发链。
 - **前台运行**：提供纯终端命令，不安装服务、不驻留托盘、不启动后台进程。
 
-## 计划中的使用方式
+## 构建
+
+需要 Visual Studio 2022（Desktop development with C++）和 CMake。应用构建只会
+编译 WinUHid 用户态 DLL，不会构建或安装驱动：
+
+```powershell
+git submodule update --init
+cmake --preset vs2022-x64
+cmake --build --preset release
+ctest --preset release
+```
+
+输出位于 `build/vs2022-x64/Release/`。
+
+## 当前使用方式
 
 程序需要从管理员 PowerShell 7 或其他管理员终端运行：
 
@@ -36,12 +51,23 @@ hid-mouse doctor
 # 只观察输入来源，不吞输入、不转发
 hid-mouse probe
 
-# 启动兼容转发
-hid-mouse run
+# 捕获一个样本，停止观察，等待 3 秒后重放
+hid-mouse run --once click --replay-delay 3 --log click.jsonl
+hid-mouse run --once move --replay-delay 3 --log move.jsonl
+hid-mouse run --once wheel --replay-delay 3 --log wheel.jsonl
 ```
 
-`run` 只服务于启动它的当前交互会话。关闭终端或按下安全退出组合键后，程序
-释放虚拟鼠标状态并退出。
+`probe` 和 `run --once` 始终放行原输入。`run --once` 捕获一个测试样本后立即停止
+Hook 和 Raw Input 观察，等待 `--replay-delay` 指定的时间，让用户切换、聚焦和
+定位目标，再通过虚拟鼠标重放并退出。等待期间的输入仍由 Windows 正常处理，
+但不会被本程序记录或转发。它是受控测试模式，不是最终的持续兼容转发。
+
+正式持续模式不会采用该测试延时，也不会等待一个移动手势结束；长移动应作为
+连续的小型输入报告低延迟转发。
+
+只有指定 `--log <path>` 才创建 UTF-8 JSONL 调试日志。日志目录必须已经存在。
+字段说明和 PowerShell 查看方式见[调试日志](docs/logging.md)，完整实测步骤见
+[测试指南](docs/testing.md)。
 
 ## 运行要求
 
@@ -55,7 +81,14 @@ HID-Mouse **不会**安装或更新驱动，也不会修改测试签名、Secure
 
 ## 支持范围
 
-首个版本计划支持：
+当前可测试：
+
+- Raw Input 鼠标设备枚举与事件记录；
+- 低级鼠标事件、注入标志和触控/笔提升签名记录；
+- 单次左键点击、相对移动、垂直/水平滚轮的 WinUHid 重放；
+- 明确的权限、DLL、驱动和虚拟设备诊断。
+
+首个完整版本计划支持：
 
 - 相对鼠标移动；
 - 左键、右键、中键、X1 和 X2；
@@ -80,6 +113,7 @@ HID-Mouse **不会**安装或更新驱动，也不会修改测试签名、Secure
 - [系统架构](docs/architecture.md)
 - [WinUHid 选型记录](docs/decisions/0001-winuhid-source.md)
 - [开发与验证计划](docs/development-plan.md)
+- [调试日志](docs/logging.md)
+- [测试指南](docs/testing.md)
 
-项目仍处于文档评审阶段。开发文档确认后才会添加 WinUHid submodule 和实现
-代码。
+持续转发只会在 probe 证明来源识别和自身回声处理可靠后实现。
